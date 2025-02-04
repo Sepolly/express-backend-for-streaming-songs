@@ -1,7 +1,7 @@
 import express, {Request,Response} from "express"
 import connectDB from "../database/connect";
 import { ObjectId } from "mongodb";
-import { verifySession } from "../auth/session.js";
+import { getCurrentUserId, verifySession } from "../auth/session.js";
 import {param} from "express-validator";
 
 const router = express.Router({ mergeParams: true })
@@ -77,10 +77,28 @@ router.patch('/:userID', async(req: Request, res: Response) => {
         return res.status(422).json({message: 'Invalid user ID'});
     }
 
+    const header = req.headers.authorization;
+    if(!header){
+        return res.status(401).json({ error: 'unauthorized' })
+    }
+    const token = header.split(' ')[1] as string;
+
+    const currentUserID = await getCurrentUserId(token);
+
+    if(currentUserID!== userID){
+        return res.status(401).json({ error: 'unauthorized' })
+    }
+
     const updatedFields = req.body;
 
     // Update the user in the database
     const usersCollection = await initDB();
+
+    const userExists = await usersCollection.findOne({_id: new ObjectId(userID)});
+    if (!userExists) {
+        return res.status(404).json({ message: 'User not found' });
+    }
+
 
     const result = await usersCollection.updateOne(
         { _id: new ObjectId(userID) },
@@ -97,14 +115,30 @@ router.patch('/:userID', async(req: Request, res: Response) => {
 router.delete('/:userID', async(req: Request, res: Response) => {
 
     const { userID } = req.params;
-
+    
     if(!userID){
         return res.status(422).json({message: 'Invalid user ID'});
     }
 
+    if(userID.length < 24){
+        return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    const header = req.headers.authorization;
+    if(!header){
+        return res.status(401).json({ error: 'unauthorized' })
+    }
+    const token = header.split(' ')[1] as string;
+
+    const currentUserID = await getCurrentUserId(token);
+
+    if(currentUserID!== userID){
+        return res.status(401).json({ error: 'unauthorized' })
+    }
+
     // Delete the user from the database
     const usersCollection = await initDB();
-    const result = await usersCollection.delete({
+    const result = await usersCollection.deleteOne({
         _id: new ObjectId(userID)
     })
 
